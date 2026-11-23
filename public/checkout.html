@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Finalizar compra — Agro Market ULEAM</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head><body>
+<nav class="navbar navbar-expand-lg navbar-dark">
+  <div class="container">
+    <a class="navbar-brand fw-bold" href="catalogo.html">🌱 Agro Market ULEAM</a>
+    <div class="navbar-nav ms-auto flex-row gap-3">
+      <a class="nav-link text-white" href="carrito.html">Carrito</a>
+      <a class="nav-link text-white" href="mis-pedidos.html">Mis pedidos</a>
+      <span class="nav-link text-white" id="usuario-nombre"></span>
+      <a class="nav-link text-white" href="#" onclick="cerrarSesion()">Salir</a>
+    </div>
+  </div>
+</nav>
+<main class="container py-4" style="max-width:900px">
+  <h4 class="fw-bold text-success mb-4"><i class="bi bi-bag-check"></i> Finalizar pedido</h4>
+  <div id="mensaje-error" class="alert alert-danger d-none" role="alert"></div>
+  <div class="row g-4">
+    <section class="col-lg-7">
+      <form id="form-checkout" class="card shadow-sm border-0 p-3 p-md-4"
+        onsubmit="event.preventDefault(); confirmarPedido()">
+        <h5 class="fw-bold mb-3">Entrega</h5>
+        <div class="mb-3">
+          <label for="tipo-pedido" class="form-label">Método de entrega</label>
+          <select id="tipo-pedido" class="form-select" onchange="actualizarEntrega()">
+            <option value="delivery">Delivery en la ULEAM</option>
+            <option value="retiro">Retiro</option>
+          </select>
+        </div>
+        <div id="campos-delivery">
+          <div class="mb-3">
+            <label for="zona" class="form-label">Bloque *</label>
+            <select id="zona" class="form-select" onchange="actualizarResumen()">
+              <option value="">Selecciona un bloque</option>
+            </select>
+          </div>
+          <div class="row g-3">
+            <div class="col-6">
+              <label for="piso" class="form-label">Piso *</label>
+              <input id="piso" class="form-control" maxlength="30" required>
+            </div>
+            <div class="col-6">
+              <label for="aula" class="form-label">Aula *</label>
+              <input id="aula" class="form-control" maxlength="30" required>
+            </div>
+          </div>
+        </div>
+        <div class="mb-3 mt-3">
+          <label for="notas" class="form-label">Notas (opcional)</label>
+          <textarea id="notas" class="form-control" rows="2" maxlength="500"></textarea>
+        </div>
+        <hr>
+        <h5 class="fw-bold mb-3">Pago</h5>
+        <div class="mb-3">
+          <label for="forma-pago" class="form-label">Forma de pago</label>
+          <select id="forma-pago" class="form-select" onchange="actualizarPago()">
+            <option value="efectivo">Efectivo</option>
+            <option value="transferencia">Transferencia</option>
+          </select>
+        </div>
+        <div id="campo-comprobante" class="mb-3 d-none">
+          <label for="comprobante" class="form-label">Comprobante de transferencia *</label>
+          <input id="comprobante" class="form-control" type="file" accept="image/*">
+          <div class="form-text">Imagen de hasta 5 MB.</div>
+        </div>
+        <button id="btn-confirmar" class="btn btn-success w-100 fw-bold" type="submit">
+          Confirmar pedido
+        </button>
+      </form>
+    </section>
+    <aside class="col-lg-5">
+      <div class="card shadow-sm border-0 p-3 p-md-4">
+        <h5 class="fw-bold mb-3">Resumen</h5>
+        <div id="resumen-productos"><p class="text-muted">Cargando carrito...</p></div>
+        <hr>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Subtotal</span><strong id="subtotal">—</strong>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Envío</span><strong id="tarifa-envio">—</strong>
+        </div>
+        <div class="d-flex justify-content-between fs-5 text-success">
+          <strong>Total</strong><strong id="total">—</strong>
+        </div>
+      </div>
+    </aside>
+  </div>
+</main>
+<script src="js/firebase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/db.js"></script>
+<script>
+  protegerPagina(["cliente"]);
+
+  let carritoActual = [];
+  let zonasActuales = [];
+
+  function mostrarError(mensaje) {
+    const el = document.getElementById("mensaje-error");
+    el.textContent = mensaje;
+    el.classList.remove("d-none");
+  }
+
+  async function iniciarPagina() {
+    cargarNavbar();
+    try {
+      const carritoGuardado = JSON.parse(localStorage.getItem("carrito") || "{}");
+      const ids = Object.keys(carritoGuardado);
+      if (!ids.length) throw new Error("Tu carrito está vacío.");
+
+      const productos = await Promise.all(ids.map(id => obtenerProducto(id)));
+      carritoActual = ids.map((id, index) => {
+        const cantidad = Number(carritoGuardado[id].cantidad);
+        const producto = productos[index];
+        if (!producto || producto.activo === false) {
+          throw new Error("Uno de los productos ya no está disponible. Revisa tu carrito.");
+        }
+        if (!Number.isInteger(cantidad) || cantidad < 1) {
+          throw new Error("Hay una cantidad inválida en el carrito.");
+        }
+        if (Number(producto.stock_actual || 0) < cantidad) {
+          throw new Error(`Stock insuficiente para ${producto.nombre}. Ajusta la cantidad en el carrito.`);
+        }
+        return { producto_id: id, cantidad, producto };
+      });
+      zonasActuales = await listarZonasDelivery();
+      zonasActuales.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      document.getElementById("zona").innerHTML += zonasActuales.map(zona =>
+        `<option value="${escaparHTML(zona.id)}"
+          data-tarifa="${Number(zona.tarifa_envio || 0)}">
+          ${escaparHTML(zona.nombre)} — ${fmt(zona.tarifa_envio)}
+        </option>`
+      ).join("");
+      renderResumen();
+      actualizarEntrega();
+      actualizarPago();
+    } catch (error) {
+      mostrarError(error.message || "No se pudo cargar el checkout.");
+      document.getElementById("btn-confirmar").disabled = true;
+      document.getElementById("resumen-productos").textContent =
+        "No se pudo cargar el resumen del pedido.";
+    }
+  }
+
+  function renderResumen() {
+    const lista = document.getElementById("resumen-productos");
+    lista.innerHTML = carritoActual.map(item => `
+      <div class="d-flex justify-content-between gap-3 mb-2">
+        <span>${escaparHTML(item.producto.nombre)} × ${item.cantidad}</span>
+        <strong>${fmt(Number(item.producto.precio) * item.cantidad)}</strong>
+      </div>`).join("");
+    actualizarResumen();
+  }
+
+  function actualizarEntrega() {
+    const esDelivery = document.getElementById("tipo-pedido").value === "delivery";
+    document.getElementById("campos-delivery").classList.toggle("d-none", !esDelivery);
+    document.getElementById("zona").required = esDelivery;
+    document.getElementById("piso").required = esDelivery;
+    document.getElementById("aula").required = esDelivery;
+    actualizarResumen();
+  }
+
+  function actualizarPago() {
+    const transferencia = document.getElementById("forma-pago").value === "transferencia";
+    document.getElementById("campo-comprobante").classList.toggle("d-none", !transferencia);
+    document.getElementById("comprobante").required = transferencia;
+  }
+
+  function actualizarResumen() {
+    const subtotal = carritoActual.reduce((suma, item) =>
+      suma + Number(item.producto.precio) * item.cantidad, 0
+    );
+    const zona = zonasActuales.find(item =>
+      item.id === document.getElementById("zona").value
+    );
+    const envio = document.getElementById("tipo-pedido").value === "delivery"
+      ? Number(zona?.tarifa_envio || 0)
+      : 0;
+    document.getElementById("subtotal").textContent = fmt(subtotal);
+    document.getElementById("tarifa-envio").textContent = fmt(envio);
+    document.getElementById("total").textContent = fmt(subtotal + envio);
+  }
+
+  async function confirmarPedido() {
+    const boton = document.getElementById("btn-confirmar");
+    const form = document.getElementById("form-checkout");
+    if (!form.reportValidity()) return;
+    boton.disabled = true;
+    boton.textContent = "Procesando...";
+    document.getElementById("mensaje-error").classList.add("d-none");
+
+    try {
+      const tipo = document.getElementById("tipo-pedido").value;
+      const formaPago = document.getElementById("forma-pago").value;
+      let comprobanteUrl = null;
+      if (formaPago === "transferencia") {
+        const archivo = document.getElementById("comprobante").files[0];
+        if (!archivo) throw new Error("Adjunta la imagen del comprobante.");
+        comprobanteUrl = await subirImagen(archivo, "comprobantes");
+      }
+
+      const zonaId = tipo === "delivery" ? document.getElementById("zona").value : null;
+      const zona = zonasActuales.find(item => item.id === zonaId);
+      const direccion = tipo === "delivery"
+        ? `${zona.nombre}, Piso ${document.getElementById("piso").value.trim()}, Aula ${document.getElementById("aula").value.trim()}`
+        : null;
+      const pedidoId = await crearPedidoConStock({
+        tipo,
+        zona_id: zonaId,
+        direccion_entrega: direccion,
+        forma_pago: formaPago,
+        comprobante_url: formaPago === "transferencia" ? comprobanteUrl : null,
+        notas: document.getElementById("notas").value.trim(),
+        detalles: carritoActual.map(item => ({
+          producto_id: item.producto_id,
+          cantidad: item.cantidad
+        }))
+      });
+      localStorage.removeItem("carrito");
+      window.location.href = `pedido-detalle.html?id=${encodeURIComponent(pedidoId)}`;
+    } catch (error) {
+      mostrarError(error.message || "No se pudo crear el pedido.");
+      boton.disabled = false;
+      boton.textContent = "Confirmar pedido";
+    }
+  }
+</script>
+</body></html>

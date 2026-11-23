@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Carrito — Agro Market ULEAM</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head><body>
+<nav class="navbar navbar-expand-lg navbar-dark">
+  <div class="container">
+    <a class="navbar-brand fw-bold" href="catalogo.html">🌱 Agro Market ULEAM</a>
+    <div class="navbar-nav ms-auto flex-row gap-3">
+      <a class="nav-link text-white" href="catalogo.html">Catálogo</a>
+      <a class="nav-link text-white" href="mis-pedidos.html">Mis pedidos</a>
+      <span class="nav-link text-white" id="usuario-nombre"></span>
+      <a class="nav-link text-white" href="#" onclick="cerrarSesion()">Salir</a>
+    </div>
+  </div>
+</nav>
+<main class="container py-4">
+  <h4 class="fw-bold text-success mb-4"><i class="bi bi-cart3"></i> Mi carrito</h4>
+  <div id="mensaje-error" class="alert alert-danger d-none" role="alert"></div>
+  <div class="card shadow-sm border-0">
+    <div id="contenido-carrito" class="card-body">
+      <div class="text-center py-4"><div class="spinner-border text-success"></div></div>
+    </div>
+  </div>
+</main>
+<script src="js/firebase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/db.js"></script>
+<script>
+  protegerPagina(["cliente"]);
+
+  function leerCarrito() {
+    const carrito = JSON.parse(localStorage.getItem("carrito") || "{}");
+    if (!carrito || typeof carrito !== "object" || Array.isArray(carrito)) {
+      throw new Error("El contenido guardado del carrito no es válido.");
+    }
+    return carrito;
+  }
+
+  function mostrarError(mensaje) {
+    const el = document.getElementById("mensaje-error");
+    el.textContent = mensaje;
+    el.classList.remove("d-none");
+  }
+
+  async function iniciarPagina() {
+    cargarNavbar();
+    const contenido = document.getElementById("contenido-carrito");
+    contenido.addEventListener("change", evento => {
+      if (evento.target.dataset.action === "quantity") {
+        actualizarCantidad(evento.target.dataset.id, evento.target.value);
+      }
+    });
+    contenido.addEventListener("click", evento => {
+      const boton = evento.target.closest("[data-action]");
+      if (!boton) return;
+      if (boton.dataset.action === "remove") quitarProducto(boton.dataset.id);
+      if (boton.dataset.action === "clear") vaciarCarrito();
+    });
+    try {
+      renderCarrito(leerCarrito());
+    } catch (error) {
+      mostrarError(error.message);
+      document.getElementById("contenido-carrito").textContent =
+        "No se pudo cargar el carrito.";
+    }
+  }
+
+  function renderCarrito(carrito) {
+    const items = Object.entries(carrito);
+    const contenido = document.getElementById("contenido-carrito");
+    if (!items.length) {
+      contenido.innerHTML = `<p class="text-muted mb-3">Tu carrito está vacío.</p>
+        <a class="btn btn-success" href="catalogo.html">Ver catálogo</a>`;
+      return;
+    }
+
+    let total = 0;
+    const filas = items.map(([id, item]) => {
+      const precio = Number(item.precio);
+      const cantidad = Number(item.cantidad);
+      if (!Number.isFinite(precio) || precio < 0
+          || !Number.isInteger(cantidad) || cantidad < 1) {
+        throw new Error("Hay un producto con datos no válidos en el carrito.");
+      }
+      const subtotal = precio * cantidad;
+      total += subtotal;
+      return `<tr>
+        <td class="fw-semibold">${escaparHTML(item.nombre || "Producto")}</td>
+        <td>${fmt(precio)}</td>
+        <td><input class="form-control form-control-sm" type="number" min="1"
+          value="${cantidad}" aria-label="Cantidad de ${escaparHTML(item.nombre || "producto")}"
+          data-action="quantity" data-id="${escaparHTML(id)}"></td>
+        <td class="fw-semibold">${fmt(subtotal)}</td>
+        <td><button class="btn btn-outline-danger btn-sm" type="button"
+          aria-label="Quitar ${escaparHTML(item.nombre || "producto")}"
+          data-action="remove" data-id="${escaparHTML(id)}">
+          <i class="bi bi-trash"></i></button></td>
+      </tr>`;
+    }).join("");
+
+    contenido.innerHTML = `<div class="table-responsive">
+      <table class="table align-middle">
+        <thead class="table-success"><tr>
+          <th>Producto</th><th>Precio</th><th style="width:110px">Cantidad</th>
+          <th>Subtotal</th><th></th>
+        </tr></thead><tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-success" href="catalogo.html">Seguir comprando</a>
+        <button class="btn btn-outline-secondary" type="button" data-action="clear">Vaciar carrito</button>
+      </div>
+      <div class="text-end">
+        <div class="fs-5 fw-bold text-success mb-2">Subtotal: ${fmt(total)}</div>
+        <a class="btn btn-success" href="checkout.html">Continuar al pago</a>
+      </div>
+    </div>
+    <p class="small text-muted mt-3 mb-0">Los precios y el stock se confirmarán al finalizar el pedido.</p>`;
+  }
+
+  function actualizarCantidad(id, valor) {
+    const cantidad = Number(valor);
+    if (!Number.isInteger(cantidad) || cantidad < 1) {
+      mostrarToast("La cantidad debe ser un número entero mayor que cero.", "warning");
+      renderCarrito(leerCarrito());
+      return;
+    }
+    const carrito = leerCarrito();
+    carrito[id].cantidad = cantidad;
+    localStorage.setItem("carrito", JSON.stringify(carrito));
+    renderCarrito(carrito);
+  }
+
+  function quitarProducto(id) {
+    const carrito = leerCarrito();
+    delete carrito[id];
+    localStorage.setItem("carrito", JSON.stringify(carrito));
+    renderCarrito(carrito);
+  }
+
+  function vaciarCarrito() {
+    localStorage.removeItem("carrito");
+    renderCarrito({});
+  }
+</script>
+</body></html>
