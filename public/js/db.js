@@ -552,9 +552,27 @@ async function subirImagen(archivo, carpeta) {
   const usuario = auth.currentUser;
   if (!usuario) throw new Error("Debes iniciar sesión para subir imágenes.");
 
-  const nombreArchivo = archivo.name.replace(/[^\w.-]/g, "_");
-  const nombre = `${Date.now()}_${Math.random().toString(36).slice(2)}_${nombreArchivo}`;
-  const referencia = storage.ref().child(`${carpeta}/${usuario.uid}/${nombre}`);
-  const resultado = await referencia.put(archivo);
-  return resultado.ref.getDownloadURL();
+  const CLOUD_NAME = "q0vtnozg";
+  const UPLOAD_PRESET = "ml_default";
+
+  const formData = new FormData();
+  formData.append("file", archivo);
+  formData.append("upload_preset", UPLOAD_PRESET);
+  formData.append("folder", `agromarket/${carpeta}`);
+
+  const respuesta = await fetch(
+    `https://cloudinary.com{CLOUD_NAME}/image/upload`,
+    {
+      method: "POST",
+      body: formData
+    }
+  );
+
+  if (!respuesta.ok) {
+    const errorDetalle = await respuesta.json().catch(() => ({}));
+    throw new Error(errorDetalle.error?.message || "No se pudo subir la imagen a Cloudinary.");
+  }
+
+  const datos = await respuesta.json();
+  return datos.secure_url;
 }
