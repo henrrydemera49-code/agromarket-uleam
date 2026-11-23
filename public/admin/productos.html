@@ -5,6 +5,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -13,10 +14,13 @@
 <nav class="navbar navbar-dark" style="background-color:#1B5E20">
   <div class="container-fluid">
     <a class="navbar-brand fw-bold" href="dashboard.html">⚙️ Admin — Agro Market</a>
-    <div class="navbar-nav flex-row gap-3">
+    <div class="navbar-nav flex-row flex-wrap gap-3">
       <a class="nav-link text-white" href="dashboard.html">Dashboard</a>
       <a class="nav-link text-white" href="productos.html">Productos</a>
       <a class="nav-link text-white" href="pedidos.html">Pedidos</a>
+      <a class="nav-link text-white" href="usuarios.html">Usuarios</a>
+      <a class="nav-link text-white" href="categorias.html">Categorías</a>
+      <a class="nav-link text-white" href="zonas.html">Zonas</a>
       <a class="nav-link text-white" href="../catalogo.html">Ver sitio</a>
       <a class="nav-link text-white" href="#" onclick="cerrarSesion()">Salir</a>
     </div>
@@ -68,8 +72,19 @@
         </div>
       </div>
       <div class="mb-3">
+        <label class="form-label" for="np-categoria">Categoría *</label>
+        <select id="np-categoria" class="form-select" required>
+          <option value="">Selecciona una categoría</option>
+        </select>
+      </div>
+      <div class="mb-3">
         <label class="form-label">Stock inicial</label>
         <input type="number" id="np-stock" class="form-control" value="0" min="0">
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="np-imagen">Imagen del producto</label>
+        <input type="file" id="np-imagen" class="form-control" accept="image/*">
+        <div class="form-text">Opcional; máximo 5 MB.</div>
       </div>
       <div class="mb-3">
         <label class="form-label">Descripción</label>
@@ -78,7 +93,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-      <button class="btn btn-success" onclick="guardarProducto()">Guardar</button>
+      <button id="btn-guardar-producto" class="btn btn-success" onclick="guardarProducto()">Guardar</button>
     </div>
   </div></div>
 </div>
@@ -91,12 +106,36 @@
 
   async function iniciarPagina() {
     cargarNavbar();
-    cargarProductos();
+    try {
+      await cargarCategoriasProductos();
+      await cargarProductos();
+    } catch (error) {
+      console.error("No se pudieron cargar los datos de productos:", error);
+      mostrarToast("No se pudieron cargar los datos de productos.", "danger");
+      document.getElementById("tabla-productos").textContent =
+        "No se pudieron cargar los productos.";
+    }
+  }
+
+  async function cargarCategoriasProductos() {
+    const categorias = await listarCategorias(true);
+    const select = document.getElementById("np-categoria");
+    select.innerHTML = `<option value="">Selecciona una categoría</option>` +
+      categorias.map(categoria => `<option value="${escaparHTML(categoria.id)}">
+        ${escaparHTML(categoria.nombre)}</option>`).join("");
+    if (!categorias.length) {
+      select.innerHTML = `<option value="">Primero crea una categoría</option>`;
+    }
   }
 
   async function cargarProductos() {
-    const snap = await db.collection("productos").orderBy("nombre").get();
-    const prods = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const [prods, categorias] = await Promise.all([
+      listarTodosProductos(),
+      listarCategorias()
+    ]);
+    const nombreCategoria = new Map(categorias.map(categoria =>
+      [categoria.id, categoria.nombre]
+    ));
     const el = document.getElementById("tabla-productos");
 
     if (!prods.length) {
@@ -107,16 +146,17 @@
 
     el.innerHTML = `<table class="table mb-0 align-middle">
       <thead class="table-success">
-        <tr><th>Producto</th><th>Precio</th><th class="text-center">Stock</th>
-            <th class="text-center">Estado</th></tr>
+        <tr><th>Producto</th><th>Categoría</th><th>Precio</th>
+            <th class="text-center">Stock</th><th class="text-center">Estado</th></tr>
       </thead>
       <tbody>
         ${prods.map(p => `<tr>
           <td>
-            <div class="fw-semibold">${p.nombre}</div>
-            <small class="text-muted">${p.descripcion || ""}</small>
+            <div class="fw-semibold">${escaparHTML(p.nombre)}</div>
+            <small class="text-muted">${escaparHTML(p.descripcion || "")}</small>
           </td>
-          <td class="fw-bold text-success">${fmt(p.precio)} /${p.unidad}</td>
+          <td>${escaparHTML(nombreCategoria.get(p.categoria_id) || "Sin categoría")}</td>
+          <td class="fw-bold text-success">${fmt(p.precio)} /${escaparHTML(p.unidad || "unidad")}</td>
           <td class="text-center ${(p.stock_actual||0)<=0?"text-danger fw-bold":""}">
             ${p.stock_actual ?? 0}
           </td>
@@ -133,24 +173,36 @@
   async function guardarProducto() {
     const nombre = document.getElementById("np-nombre").value.trim();
     const precio = parseFloat(document.getElementById("np-precio").value) || 0;
-    if (!nombre || precio <= 0) {
-      mostrarToast("Completa nombre y precio", "warning"); return;
+    const boton = document.getElementById("btn-guardar-producto");
+    if (!nombre || precio <= 0 || !document.getElementById("np-categoria").value) {
+      mostrarToast("Completa nombre, precio y categoría.", "warning"); return;
     }
-    await db.collection("productos").add({
-      nombre,
-      precio,
-      unidad:       document.getElementById("np-unidad").value,
-      descripcion:  document.getElementById("np-desc").value.trim(),
-      stock_actual: parseInt(document.getElementById("np-stock").value) || 0,
-      activo:       true,
-      created_at:   firebase.firestore.FieldValue.serverTimestamp()
-    });
-    bootstrap.Modal.getInstance(document.getElementById("modalNuevo")).hide();
-    mostrarToast("Producto creado ✓");
-    // Limpiar formulario
-    ["np-nombre","np-precio","np-stock","np-desc"].forEach(id =>
-      document.getElementById(id).value = "");
-    cargarProductos();
+    boton.disabled = true;
+    try {
+      const archivo = document.getElementById("np-imagen").files[0];
+      const imagenUrl = archivo ? await subirImagen(archivo, "productos") : null;
+      await crearProducto({
+        nombre,
+        precio,
+        unidad:       document.getElementById("np-unidad").value,
+        descripcion:  document.getElementById("np-desc").value.trim(),
+        categoria_id: document.getElementById("np-categoria").value,
+        stock_actual: parseInt(document.getElementById("np-stock").value) || 0,
+        imagen_url:   imagenUrl,
+        activo:       true
+      });
+      bootstrap.Modal.getInstance(document.getElementById("modalNuevo")).hide();
+      mostrarToast("Producto creado ✓");
+      ["np-nombre","np-precio","np-stock","np-desc","np-imagen"].forEach(id =>
+        document.getElementById(id).value = "");
+      document.getElementById("np-categoria").value = "";
+      await cargarProductos();
+    } catch (error) {
+      console.error("No se pudo crear el producto:", error);
+      mostrarToast(error.message || "No se pudo crear el producto.", "danger");
+    } finally {
+      boton.disabled = false;
+    }
   }
 </script>
 </body></html>
