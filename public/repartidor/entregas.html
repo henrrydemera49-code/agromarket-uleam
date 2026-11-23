@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mis entregas — Agro Market ULEAM</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="../css/style.css">
+</head><body>
+<nav class="navbar navbar-dark">
+  <div class="container">
+    <a class="navbar-brand fw-bold" href="entregas.html">🚚 Repartidor — Agro Market</a>
+    <div class="navbar-nav flex-row gap-3">
+      <span class="nav-link text-white" id="usuario-nombre"></span>
+      <a class="nav-link text-white" href="#" onclick="cerrarSesion()">Salir</a>
+    </div>
+  </div>
+</nav>
+<main class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="fw-bold text-success mb-1">Mis entregas</h4>
+      <p class="text-muted mb-0">Pedidos asignados para entrega o retiro.</p>
+    </div>
+    <button id="actualizar-entregas" class="btn btn-outline-success" type="button">
+      <i class="bi bi-arrow-clockwise"></i> Actualizar
+    </button>
+  </div>
+  <div id="mensaje-entregas" class="alert d-none" role="alert"></div>
+  <div id="lista-entregas">
+    <div class="text-center py-5"><div class="spinner-border text-success"></div></div>
+  </div>
+</main>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/db.js"></script>
+<script src="../js/repartidor/entregas.js"></script>
+</body></html>
