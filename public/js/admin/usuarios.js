@@ -2,6 +2,8 @@ let usuariosAdministrados = [];
 
 async function iniciarPagina() {
   cargarNavbar();
+  document.getElementById("form-nuevo-usuario")
+    .addEventListener("submit", crearUsuarioDesdeFormulario);
   const tabla = document.getElementById("tabla-usuarios");
   tabla.addEventListener("click", async evento => {
     const boton = evento.target.closest("[data-action='save-user']");
@@ -9,6 +11,47 @@ async function iniciarPagina() {
     await guardarCambiosUsuario(boton);
   });
   await cargarUsuarios();
+}
+
+async function crearUsuarioDesdeFormulario(evento) {
+  evento.preventDefault();
+  const form = evento.currentTarget;
+  if (!form.reportValidity()) return;
+
+  const boton = document.getElementById("btn-crear-usuario");
+  boton.disabled = true;
+  try {
+    await crearUsuarioAdmin({
+      nombre: document.getElementById("nuevo-nombre").value,
+      apellido: document.getElementById("nuevo-apellido").value,
+      correo: document.getElementById("nuevo-correo").value,
+      rol: document.getElementById("nuevo-rol").value,
+      password: document.getElementById("nuevo-password").value
+    });
+    form.reset();
+    const modal = bootstrap.Modal.getInstance(
+      document.getElementById("modalNuevoUsuario")
+    );
+    if (modal) modal.hide();
+    mostrarMensajeUsuarios(
+      "Cuenta creada. Comparte las credenciales temporales por un canal seguro.",
+      "success"
+    );
+    await cargarUsuarios();
+  } catch (error) {
+    console.error("No se pudo crear el usuario:", error);
+    const mensajes = {
+      "auth/email-already-in-use": "Ese correo ya tiene una cuenta.",
+      "auth/invalid-email": "El correo no es válido.",
+      "auth/weak-password": "La contraseña debe tener al menos 6 caracteres."
+    };
+    mostrarMensajeUsuarios(
+      mensajes[error.code] || error.message || "No se pudo crear el usuario.",
+      "danger"
+    );
+  } finally {
+    boton.disabled = false;
+  }
 }
 
 async function cargarUsuarios() {

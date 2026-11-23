@@ -60,6 +60,35 @@ async function crearUsuarioDB(uid, datos) {
   });
 }
 
+async function crearUsuarioAdminDB(uid, datos) {
+  const adminId = auth.currentUser && auth.currentUser.uid;
+  if (!adminId) throw new Error("Debes iniciar sesión como administrador.");
+  const admin = await obtenerUsuario(adminId);
+  const rolesPermitidos = ["cliente", "administrador", "repartidor"];
+  const correo = String(datos.correo || "").trim().toLowerCase();
+  const nombre = String(datos.nombre || "").trim();
+  const apellido = String(datos.apellido || "").trim();
+  if (!admin || admin.activo === false || admin.rol !== "administrador") {
+    throw new Error("Solo un administrador puede crear usuarios.");
+  }
+  if (!nombre || !apellido || !correo.endsWith(DOMINIO_ULEAM)
+      || !rolesPermitidos.includes(datos.rol)) {
+    throw new Error("Los datos del nuevo usuario no son válidos.");
+  }
+
+  const usuarioRef = db.collection("usuarios").doc(uid);
+  const existente = await usuarioRef.get();
+  if (existente.exists) throw new Error("Ya existe un perfil para esa cuenta.");
+  await usuarioRef.set({
+    nombre,
+    apellido,
+    correo,
+    rol: datos.rol,
+    activo: true,
+    created_at: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
 async function listarUsuarios() {
   const snap = await db.collection("usuarios").orderBy("nombre").get();
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));

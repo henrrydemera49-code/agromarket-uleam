@@ -43,16 +43,31 @@ service cloud.firestore {
           ]);
     }
 
+    function perfilUsuarioNuevoValido() {
+      return request.resource.data.keys().hasOnly([
+          "nombre", "apellido", "correo", "rol", "activo", "created_at"
+        ])
+        && request.resource.data.keys().hasAll([
+          "nombre", "apellido", "correo", "rol", "activo", "created_at"
+        ])
+        && request.resource.data.nombre is string
+        && request.resource.data.apellido is string
+        && request.resource.data.correo is string
+        && request.resource.data.correo.matches('.*@uleam\\.edu\\.ec$')
+        && request.resource.data.activo == true;
+    }
+
     match /usuarios/{uid} {
       allow get: if autenticado() && (request.auth.uid == uid || esAdmin());
       allow list: if esAdmin();
-      allow create: if autenticado()
-        && request.auth.uid == uid
-        && request.resource.data.rol == "cliente"
-        && request.resource.data.activo == true
-        && request.resource.data.correo is string
-        && request.resource.data.correo.matches('.*@uleam\\.edu\\.ec$')
-        && request.auth.token.email == request.resource.data.correo;
+      allow create: if perfilUsuarioNuevoValido()
+        && ((autenticado()
+            && request.auth.uid == uid
+            && request.resource.data.rol == "cliente"
+            && request.auth.token.email == request.resource.data.correo)
+          || (esAdmin()
+            && request.resource.data.rol
+              in ["cliente", "administrador", "repartidor"]));
       allow update: if esAdmin()
         || (usuarioActivo()
           && request.auth.uid == uid

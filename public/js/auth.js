@@ -50,6 +50,70 @@ function protegerPagina(rolesPermitidos = []) {
   });
 }
 
+async function crearUsuarioAdmin(datos) {
+  const usuarioAdmin = auth.currentUser;
+  if (!usuarioAdmin) throw new Error("Debes iniciar sesión como administrador.");
+  const perfilAdmin = await obtenerUsuario(usuarioAdmin.uid);
+  if (!perfilAdmin || perfilAdmin.activo === false
+      || perfilAdmin.rol !== "administrador") {
+    throw new Error("Solo un administrador puede crear usuarios.");
+  }
+
+  const nombre = String(datos.nombre || "").trim();
+  const apellido = String(datos.apellido || "").trim();
+  const correo = String(datos.correo || "").trim().toLowerCase();
+  const password = String(datos.password || "");
+  const rolesPermitidos = ["cliente", "administrador", "repartidor"];
+  if (!nombre || !apellido || !correo.endsWith(DOMINIO_ULEAM)
+      || password.length < 6 || !rolesPermitidos.includes(datos.rol)) {
+    throw new Error("Revisa los datos, el dominio institucional y la contraseña.");
+  }
+
+  const nombreApp = "agromarket-user-provisioning";
+  const appExistente = firebase.apps.find(app => app.name === nombreApp);
+  const appSecundaria = appExistente
+    || firebase.initializeApp(firebaseConfig, nombreApp);
+  const authSecundario = appSecundaria.auth();
+  await authSecundario.setPersistence(firebase.auth.Auth.Persistence.NONE);
+
+  let usuarioCreado = null;
+  try {
+    const credencial = await authSecundario.createUserWithEmailAndPassword(
+      correo,
+      password
+    );
+    usuarioCreado = credencial.user;
+    await crearUsuarioAdminDB(usuarioCreado.uid, {
+      nombre,
+      apellido,
+      correo,
+      rol: datos.rol
+    });
+  } catch (error) {
+    if (usuarioCreado) {
+      try {
+        await usuarioCreado.delete();
+      } catch (errorLimpieza) {
+        console.error("No se pudo revertir la cuenta de Auth incompleta:", errorLimpieza);
+        throw new Error(
+          `La cuenta de Auth ${usuarioCreado.uid} existe, pero no se pudo guardar su perfil ni revertirla.`
+        );
+      }
+    }
+    throw error;
+  } finally {
+    if (authSecundario.currentUser) {
+      try {
+        await authSecundario.signOut();
+      } catch (errorCierre) {
+        console.error("No se pudo cerrar la sesión secundaria de Auth:", errorCierre);
+      }
+    }
+  }
+
+  return usuarioCreado.uid;
+}
+
 // Cerrar sesión
 function cerrarSesion() {
   auth.signOut()
