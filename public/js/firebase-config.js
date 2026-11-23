@@ -18,4 +18,6 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.firestore();
 
-const DOMINIO = "@uleam.edu.ec";
+const storage = firebase.storage();
+const DOMINIO_ULEAM = "@uleam.edu.ec";
+const DOMINIO = DOMINIO_ULEAM;

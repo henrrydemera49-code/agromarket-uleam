@@ -8,12 +8,6 @@
 // comportamiento según el objeto (rol) que lo invoca.
 // ═══════════════════════════════════════════════════════
 
-// Obtener datos del usuario desde Firestore
-async function obtenerUsuario(uid) {
-  const doc = await db.collection("usuarios").doc(uid).get();
-  return doc.exists ? { id: doc.id, ...doc.data() } : null;
-}
-
 // Proteger páginas según rol
 // Uso: protegerPagina(["cliente"])         → solo clientes
 //      protegerPagina(["administrador"])   → solo admin
@@ -24,21 +18,48 @@ function protegerPagina(rolesPermitidos = []) {
       window.location.href = "/login.html";
       return;
     }
-    if (rolesPermitidos.length > 0) {
-      const datos = await obtenerUsuario(user.uid);
-      if (!datos || !rolesPermitidos.includes(datos.rol)) {
-        window.location.href = "/catalogo.html";
-        return;
+    try {
+      if (rolesPermitidos.length > 0) {
+        const datos = await obtenerUsuario(user.uid);
+        if (!datos) {
+          window.location.href = "/login.html";
+          return;
+        }
+        if (datos.activo === false) {
+          await auth.signOut();
+          window.location.href = "/login.html";
+          return;
+        }
+        if (!rolesPermitidos.includes(datos.rol)) {
+          const destinos = {
+            cliente: "/catalogo.html",
+            administrador: "/admin/dashboard.html",
+            repartidor: "/repartidor/entregas.html"
+          };
+          window.location.href = destinos[datos.rol] || "/login.html";
+          return;
+        }
+      }
+      if (typeof iniciarPagina === "function") iniciarPagina();
+    } catch (error) {
+      console.error("No se pudo validar el acceso a la página:", error);
+      if (typeof mostrarToast === "function") {
+        mostrarToast("No se pudo validar tu acceso. Intenta nuevamente.", "danger");
       }
     }
-    // Si pasó la verificación, iniciar la página
-    if (typeof iniciarPagina === "function") iniciarPagina();
   });
 }
 
 // Cerrar sesión
 function cerrarSesion() {
-  auth.signOut().then(() => window.location.href = "/login.html");
+  auth.signOut()
+    .then(() => window.location.href = "/login.html")
+    .catch(error => {
+      console.error("No se pudo cerrar la sesión:", error);
+      if (typeof mostrarToast === "function") {
+        mostrarToast("No se pudo cerrar la sesión.", "danger");
+      }
+    });
 }
 
 // ── MOO: ATAJO OCULTO (Ctrl+Shift+A) ────────────────
@@ -49,9 +70,13 @@ document.addEventListener("keydown", async (e) => {
     e.preventDefault();
     const user = auth.currentUser;
     if (!user) return;
-    const datos = await obtenerUsuario(user.uid);
-    if (datos && datos.rol === "administrador") {
-      window.location.href = "/admin/dashboard.html";
+    try {
+      const datos = await obtenerUsuario(user.uid);
+      if (datos && datos.rol === "administrador") {
+        window.location.href = "/admin/dashboard.html";
+      }
+    } catch (error) {
+      console.error("No se pudo comprobar el rol del usuario:", error);
     }
   }
 });
@@ -83,3 +108,13 @@ function mostrarToast(mensaje, tipo = "success") {
 
 // Formatear precio
 const fmt = (n) => "$" + parseFloat(n||0).toFixed(2);
+
+function escaparHTML(valor) {
+  return String(valor == null ? "" : valor).replace(/[&<>"']/g, caracter => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[caracter]);
+}
